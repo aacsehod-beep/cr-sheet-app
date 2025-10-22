@@ -1,25 +1,30 @@
 from flask import Flask, render_template, request, redirect, session, url_for, flash
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2 import service_account
 from datetime import datetime
+import os, json
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 
-# Google Sheets setup
+# ---------------- Google Sheets Setup ----------------
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+
+# Load Google credentials from Render Environment Variable
+service_account_info = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+creds = service_account.Credentials.from_service_account_info(service_account_info, scopes=scope)
+
 client = gspread.authorize(creds)
 sheet = client.open("crdaywise")
 
-# Dummy user data
+# ---------------- User Data ----------------
 users = {
-     "Dwarak": {"password": "cse2a", "section": "CSE-2A"},
+    "Dwarak": {"password": "cse2a", "section": "CSE-2A"},
     "Bhuvan": {"password": "cse2a", "section": "CSE-2A"},
-     "rohith": {"password": "pass123", "section": "CSE-2B"},
-     "Sowmya": {"password": "cse2b", "section": "CSE-2B"},
-      "uday": {"password": "cse2c", "section": "CSE-2C"},
-      "tejaswini": {"password": "cse2c", "section": "CSE-2C"},
+    "rohith": {"password": "pass123", "section": "CSE-2B"},
+    "Sowmya": {"password": "cse2b", "section": "CSE-2B"},
+    "uday": {"password": "cse2c", "section": "CSE-2C"},
+    "tejaswini": {"password": "cse2c", "section": "CSE-2C"},
     "sandeep": {"password": "Sandeep@12", "section": "AIML-2A"},
     "sneha": {"password": "Sneha@4", "section": "AIML-2A"},
     "rimsha": {"password": "2609", "section": "AIML-2B"},
@@ -30,18 +35,18 @@ users = {
     "sai": {"password": "ds2a", "section": "DS-2A"},
     "Varshini": {"password": "cse3a", "section": "CSE-3A"},
     "Ganesh": {"password": "cse3a", "section": "CSE-3A"},
-    "Ganesh": {"password": "CSE3B", "section": "CSE-3B"},
-    "Varshini": {"password": "CSE3B", "section": "CSE-3B"},
+    "Ganesh3B": {"password": "CSE3B", "section": "CSE-3B"},
+    "Varshini3B": {"password": "CSE3B", "section": "CSE-3B"},
     "Akshay": {"password": "cse3c", "section": "CSE-3C"},
     "Bhavya": {"password": "cse3c", "section": "CSE-3C"},
     "VISHNU": {"password": "aiml3a", "section": "AIML-3A"},
     "NAVYA": {"password": "aiml3a", "section": "AIML-3A"},
-    "Mudabbir": {"password": "AIML3b", "section": "AIML-3B"},
     "Mudabbir": {"password": "AIML3B", "section": "AIML-3B"},
     "DS3A1": {"password": "ds3a", "section": "DS-3A"},
     "DS3A2": {"password": "ds3a", "section": "DS-3A"},
 }
 
+# ---------------- Routes ----------------
 @app.route('/')
 def home():
     return redirect('/login')
@@ -72,7 +77,7 @@ def dashboard():
 
     section = session['section']
     worksheet = sheet.worksheet(section)
-    all_rows = worksheet.get_all_values()  # includes header
+    all_rows = worksheet.get_all_values()
     headers = all_rows[0]
     data_rows = all_rows[1:]
 
@@ -85,19 +90,18 @@ def dashboard():
     for i, row in enumerate(data_rows):
         record = dict(zip(headers, row))
         if record['Date'] == selected_date:
-            record['row_index'] = i + 2  # +2 accounts for header and 1-based indexing
+            record['row_index'] = i + 2
             indexed_records.append(record)
 
     total_pages = (len(indexed_records) + per_page - 1) // per_page
     start = (page - 1) * per_page
     end = start + per_page
     paginated_records = indexed_records[start:end]
-    # Get all unique dates for the dropdown
+
     all_dates = sorted(set(dict(zip(headers, row))['Date'] for row in data_rows), reverse=True)
 
     submitted_hours = [
-        r['Hour'] for r in indexed_records
-        if r['CR Name'] == session['username']
+        r['Hour'] for r in indexed_records if r['CR Name'] == session['username']
     ]
 
     return render_template(
@@ -119,7 +123,7 @@ def submit():
 
     section = session['section']
     worksheet = sheet.worksheet(section)
-    all_rows = worksheet.get_all_values()  # includes header
+    all_rows = worksheet.get_all_values()
     headers = all_rows[0]
     data_rows = all_rows[1:]
 
@@ -127,14 +131,12 @@ def submit():
     hour = request.form['hour']
     cr_name = session['username']
 
-    # Check for duplicate hour submission
     for row in data_rows:
         record = dict(zip(headers, row))
         if record['Date'] == submitted_date and record['CR Name'] == cr_name and record['Hour'] == hour:
             flash("You have already submitted this hour for the selected date.", "error")
             return redirect(url_for('dashboard', selected_date=submitted_date, active_tab='submit'))
 
-    # Prepare new row
     new_row = [
         submitted_date,
         cr_name,
@@ -147,18 +149,16 @@ def submit():
         request.form['faculty_out']
     ]
 
-    # Find correct insert index based on date order
-    insert_index = len(all_rows) + 1  # default to end
+    insert_index = len(all_rows) + 1
     for i, row in enumerate(data_rows):
         record = dict(zip(headers, row))
         if record['Date'] > submitted_date:
-            insert_index = i + 2  # +2 accounts for header and 1-based indexing
+            insert_index = i + 2
             break
 
     worksheet.insert_row(new_row, index=insert_index)
     flash("Entry submitted successfully!", "success")
     return redirect(url_for('dashboard', selected_date=submitted_date, active_tab='submit'))
-
 
 @app.route('/edit/<int:row_index>', methods=['GET', 'POST'])
 def edit_entry(row_index):
@@ -186,6 +186,8 @@ def edit_entry(row_index):
         return redirect(url_for('dashboard', selected_date=request.form['date'], active_tab='view'))
 
     return render_template('edit.html', row=row_data, row_index=row_index)
-# run the app
+
+
+# ---------------- Run App ----------------
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
